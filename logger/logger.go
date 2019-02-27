@@ -282,7 +282,9 @@ func (log *Logger) checkFiles() {
 // Stop Logger
 func (log *Logger) Stop() {
 	if log.useLogger {
-		log.CurrentFile.Close()
+		if nil != log.CurrentFile {
+			log.CurrentFile.Close()
+		}
 		log.ticker.Stop()
 	}
 	if log.glog {
