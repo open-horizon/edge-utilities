@@ -11,6 +11,11 @@ func Init(parameters logger.Parameters) error {
 	return log.Init(parameters)
 }
 
+// ParseDestinationsList parses a list of destinations
+func ParseDestinationsList(destinations string) ([]bool, bool) {
+	return log.ParseDestinationsList(destinations)
+}
+
 // Stop Logger
 func Stop() {
 	log.Stop()
