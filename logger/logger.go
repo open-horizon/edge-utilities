@@ -67,6 +67,15 @@ const (
 	TRACE   = 7
 )
 
+// Log destinations
+const (
+	FILE = iota
+	STDOUT
+	SYSLOG
+	GLOG
+	destinationTypes
+)
+
 var logLevels = map[string]int{
 	"NONE": NONE, "STATUS": STATUS, "FATAL": FATAL, "ERROR": ERROR,
 	"WARNING": WARNING, "INFO": INFO, "DEBUG": DEBUG, "TRACE": TRACE,
@@ -83,26 +92,14 @@ var logLevel2glog = []int{0, 0, 0, 0, 0, 3, 5, 6}
 
 // Init Initialize Logger
 func (log *Logger) Init(parameters Parameters) error {
-	dests := strings.Split(parameters.Destinations, ",")
-	var file, writeToStdout, writeToSyslog, glog bool
-	if len(dests) == 0 {
-		file = true
-	} else {
-		for _, dest := range dests {
-			if strings.EqualFold(dest, "file") {
-				file = true
-			} else if strings.EqualFold(dest, "stdout") {
-				writeToStdout = true
-			} else if strings.EqualFold(dest, "syslog") {
-				writeToSyslog = true
-			} else if strings.EqualFold(dest, "glog") {
-				glog = true
-			}
-		}
+
+	destinations, entries := log.ParseDestinationsList(parameters.Destinations)
+	if !entries {
+		destinations[FILE] = true
 	}
 
 	writers := make([]io.Writer, 0)
-	if file {
+	if destinations[FILE] {
 		info, err := os.Stat(parameters.RootPath)
 		if os.IsNotExist(err) {
 			err = os.MkdirAll(parameters.RootPath, 0755)
@@ -123,11 +120,11 @@ func (log *Logger) Init(parameters Parameters) error {
 		writers = append(writers, f)
 		log.CurrentFile = f
 	}
-	if writeToStdout {
+	if destinations[STDOUT] {
 		writers = append(writers, os.Stdout)
 		log.Stdout = true
 	}
-	if writeToSyslog {
+	if destinations[SYSLOG] {
 		slWriter, err := syslog.New(syslog.LOG_NOTICE, parameters.FileName)
 		if err != nil {
 			return &Error{fmt.Sprintf("Failed to create syslog writer. Error: %s\n", err)}
@@ -135,7 +132,7 @@ func (log *Logger) Init(parameters Parameters) error {
 		writers = append(writers, slWriter)
 		log.Syslog = slWriter
 	}
-	if len(writers) == 0 && !glog {
+	if len(writers) == 0 && !destinations[GLOG] {
 		return &Error{fmt.Sprintf("Invalid log/trace destinations list: %s\n", parameters.Destinations)}
 	}
 
@@ -153,23 +150,45 @@ func (log *Logger) Init(parameters Parameters) error {
 		log.lockChannel = make(chan int, 1)
 		log.lockChannel <- 1
 
-		log.ticker = time.NewTicker(time.Second * time.Duration(parameters.MaintenanceInterval))
-		go func() {
-			for {
-				select {
-				case <-log.ticker.C:
-					log.checkFiles()
+		if log.CurrentFile != nil {
+			log.ticker = time.NewTicker(time.Second * time.Duration(parameters.MaintenanceInterval))
+			go func() {
+				for {
+					select {
+					case <-log.ticker.C:
+						log.checkFiles()
+					}
 				}
-			}
-		}()
+			}()
+		}
 	}
 
-	if glog {
+	if destinations[GLOG] {
 		log.Level = logLevel(parameters.Level)
 		log.prefix = parameters.Prefix
 		log.glog = true
 	}
 	return nil
+}
+
+// ParseDestinationsList parses a list of destinations
+func (log *Logger) ParseDestinationsList(destinations string) ([]bool, bool) {
+	result := make([]bool, destinationTypes, destinationTypes)
+	dests := strings.Split(destinations, ",")
+
+	for _, dest := range dests {
+		if strings.EqualFold(dest, "file") {
+			result[FILE] = true
+		} else if strings.EqualFold(dest, "stdout") {
+			result[STDOUT] = true
+		} else if strings.EqualFold(dest, "syslog") {
+			result[SYSLOG] = true
+		} else if strings.EqualFold(dest, "glog") {
+			result[GLOG] = true
+		}
+	}
+
+	return result, len(dests) != 0
 }
 
 func (log *Logger) getOldestZipFileNumber() int {
@@ -284,8 +303,8 @@ func (log *Logger) Stop() {
 	if log.useLogger {
 		if nil != log.CurrentFile {
 			log.CurrentFile.Close()
+			log.ticker.Stop()
 		}
-		log.ticker.Stop()
 	}
 	if log.glog {
 		glog.Flush()
