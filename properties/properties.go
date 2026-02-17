@@ -91,9 +91,13 @@ func commonLoad(values func(string) (string, bool), object interface{}, metaData
 			case reflect.Int64:
 				var intValue int64
 				if 0 != len(value) {
-					_, err := fmt.Sscanf(value, "%d", &intValue)
-					if err != nil {
-						return err
+					var remainder string
+					n, err := fmt.Sscanf(value, "%d%s", &intValue, &remainder)
+					if err != nil && n == 0 {
+						return fmt.Errorf("invalid integer value: %q", value)
+					}
+					if n > 1 && len(remainder) > 0 {
+						return fmt.Errorf("invalid integer value: %q (contains non-numeric characters)", value)
 					}
 				}
 				fieldValue.SetInt(intValue)
@@ -109,12 +113,33 @@ func commonLoad(values func(string) (string, bool), object interface{}, metaData
 			case reflect.Uint64:
 				var uintValue uint64
 				if 0 != len(value) {
-					_, err := fmt.Sscanf(value, "%d", &uintValue)
-					if err != nil {
-						return err
+					var remainder string
+					n, err := fmt.Sscanf(value, "%d%s", &uintValue, &remainder)
+					if err != nil && n == 0 {
+						return fmt.Errorf("invalid unsigned integer value: %q", value)
+					}
+					if n > 1 && len(remainder) > 0 {
+						return fmt.Errorf("invalid unsigned integer value: %q (contains non-numeric characters)", value)
 					}
 				}
 				fieldValue.SetUint(uintValue)
+
+			case reflect.Slice:
+				// Support for []string (string slices/arrays)
+				if field.Type.Elem().Kind() == reflect.String {
+					if len(value) > 0 {
+						// Split on comma and trim whitespace from each element
+						parts := strings.Split(value, ",")
+						stringSlice := make([]string, 0, len(parts))
+						for _, part := range parts {
+							trimmed := strings.TrimSpace(part)
+							if len(trimmed) > 0 {
+								stringSlice = append(stringSlice, trimmed)
+							}
+						}
+						fieldValue.Set(reflect.ValueOf(stringSlice))
+					}
+				}
 
 			case reflect.String:
 				fieldValue.SetString(value)
@@ -141,8 +166,9 @@ func ReadPropertiesFile(fileName string, optional bool) (map[string]string, erro
 	fileScanner := bufio.NewScanner(rdr)
 	for fileScanner.Scan() {
 		line := fileScanner.Text()
-		if len(line) > 0 && line[0] != '#' {
-			parts := strings.Fields(line)
+		trimmedLine := strings.TrimSpace(line)
+		if len(trimmedLine) > 0 && trimmedLine[0] != '#' {
+			parts := strings.Fields(trimmedLine)
 			var value []string
 			if len(parts) >= 1 {
 				key := parts[0]
