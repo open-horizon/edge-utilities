@@ -1,2 +1,6 @@
-vendor/*/
+# IDE directories
+.idea/
+
+# Bob-Shell directories
+.bob/
 

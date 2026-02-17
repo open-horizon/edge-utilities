@@ -175,20 +175,26 @@ func (log *Logger) Init(parameters Parameters) error {
 func (log *Logger) ParseDestinationsList(destinations string) ([]bool, bool) {
 	result := make([]bool, destinationTypes, destinationTypes)
 	dests := strings.Split(destinations, ",")
+	validCount := 0
 
 	for _, dest := range dests {
-		if strings.EqualFold(dest, "file") {
+		trimmed := strings.TrimSpace(dest)
+		if strings.EqualFold(trimmed, "file") {
 			result[FILE] = true
-		} else if strings.EqualFold(dest, "stdout") {
+			validCount++
+		} else if strings.EqualFold(trimmed, "stdout") {
 			result[STDOUT] = true
-		} else if strings.EqualFold(dest, "syslog") {
+			validCount++
+		} else if strings.EqualFold(trimmed, "syslog") {
 			result[SYSLOG] = true
-		} else if strings.EqualFold(dest, "glog") {
+			validCount++
+		} else if strings.EqualFold(trimmed, "glog") {
 			result[GLOG] = true
+			validCount++
 		}
 	}
 
-	return result, len(dests) != 0
+	return result, validCount > 0
 }
 
 func (log *Logger) getOldestZipFileNumber() int {
